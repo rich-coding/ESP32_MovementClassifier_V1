@@ -1,4 +1,4 @@
-import serial
+import serial as sr
 import time
 import csv
 
@@ -14,11 +14,11 @@ def guardar_datos_serial(puerto='COM5', baudrate=115200, timeout=1, num_datos=10
     """
     try:
         # Inicializar la conexión serial
-        ser = serial.Serial(puerto, baudrate, timeout=timeout)
+        ser = sr.Serial(puerto, baudrate, timeout=timeout)
         time.sleep(2)  # Esperar a que la conexión serial se establezca
         print(f"Conectado al puerto {puerto}. Comenzando a recibir datos...")
 
-    except serial.SerialException as e:
+    except sr.SerialException as e:
         print(f"Error al abrir el puerto serial: {e}")
         return
 
