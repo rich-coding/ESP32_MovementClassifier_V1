@@ -58,68 +58,60 @@ void setup() {
   delay(100);
 }
 
+// --- FUNCION loop() ---
 void loop() {
-  // Lógica para el LED parpadeante
+  // Lógica para el LED parpadeante (sin cambios)
   static unsigned long lastBlinkTime = 0;
   if (millis() - lastBlinkTime > 1000) {
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
     lastBlinkTime = millis();
   }
 
-  if (sensor_ok && display_ok) {
+  // Si ambos dispositivos funcionan, proceder a la lógica principal
+  if (sensor_ok) {
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
 
-    // Limpiar pantalla y mostrar los valores en dos filas
-    display.clearDisplay();
-    display.setCursor(0, 0);
-    display.print("A (m/s2): ");
-    display.print(a.acceleration.x, 1);
-    display.print(", ");
-    display.print(a.acceleration.y, 1);
-    display.print(", ");
-    display.println(a.acceleration.z, 1);
+    // --- SECCIÓN PARA EL ENVÍO DE DATOS ---
+    // Envía todos los datos en una sola línea, separados por comas.
+    Serial.print(a.acceleration.x);
+    Serial.print(",");
+    Serial.print(a.acceleration.y);
+    Serial.print(",");
+    Serial.print(a.acceleration.z);
+    Serial.print(",");
+    Serial.print(g.gyro.x);
+    Serial.print(",");
+    Serial.print(g.gyro.y);
+    Serial.print(",");
+    Serial.print(g.gyro.z);
+    Serial.print(",");
+    Serial.println(temp.temperature); // Usamos println() en el último dato para el salto de línea
 
-    display.print("G (rad/s): ");
-    display.print(g.gyro.x, 1);
-    display.print(", ");
-    display.print(g.gyro.y, 1);
-    display.print(", ");
-    display.println(g.gyro.z, 1);
-    
-    display.display();
+    // Si la pantalla también funciona, la actualizamos para visualización local
+    if (display_ok) {
+        display.clearDisplay();
+        display.setCursor(0, 0);
+        display.print("Ax:"); display.print(a.acceleration.x, 1);
+        display.print(" Gx:"); display.println(g.gyro.x, 1);
+        display.print("Ay:"); display.print(a.acceleration.y, 1);
+        display.print(" Gy:"); display.println(g.gyro.y, 1);
+        display.print("Az:"); display.print(a.acceleration.z, 1);
+        display.print(" Gz:"); display.println(g.gyro.z, 1);
+        display.print("Temp: "); display.print(temp.temperature, 1); display.println(" C");
+        display.display();
+    }
 
-    // También enviar al Serial Monitor para depuración
-    Serial.print("A (m/s2): ");
-    Serial.print(a.acceleration.x, 1);
-    Serial.print(", ");
-    Serial.print(a.acceleration.y, 1);
-    Serial.print(", ");
-    Serial.println(a.acceleration.z, 1);
-
-    Serial.print("G (rad/s): ");
-    Serial.print(g.gyro.x, 1);
-    Serial.print(", ");
-    Serial.print(g.gyro.y, 1);
-    Serial.print(", ");
-    Serial.println(g.gyro.z, 1);
-    Serial.println("");
-
-  } else if (!display_ok && sensor_ok) {
-    // Si solo el sensor funciona, avisar por serial
-    Serial.println("ERROR: Pantalla no detectada. Mostrando solo por Serial Monitor.");
-    sensors_event_t a, g, temp;
-    mpu.getEvent(&a, &g, &temp);
-    Serial.print("Acc: "); Serial.print(a.acceleration.x); Serial.print(";"); Serial.print(a.acceleration.y); Serial.print(";"); Serial.println(a.acceleration.z);
   } else if (display_ok && !sensor_ok) {
-    // Si solo la pantalla funciona, mostrar el mensaje de error del sensor en ella
+    // Lógica para mostrar error si el sensor falla
     display.clearDisplay();
     display.setCursor(0, 0);
     display.println("ERROR: Sensor MPU6050");
-    display.println("no detectado. Revise ");
-    display.println("las conexiones.");
+    display.println("no detectado. Revise");
+    display.println("conexiones.");
     display.display();
   }
+  // Si ni el sensor ni la pantalla funcionan, el LED parpadeará como única indicación.
 
-  delay(100);
+  delay(100); // Retardo para no saturar el puerto serial
 }
