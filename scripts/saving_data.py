@@ -1,87 +1,88 @@
 import serial
 import time
 import csv
+import os
 
 def guardar_datos_serial(puerto='COM5', baudrate=115200, timeout=1, num_datos=100):
     """
-    Captura datos del puerto serial y los guarda en un archivo CSV.
+    Captura datos de un sensor (ej. MPU6050) desde un puerto serial y los 
+    guarda en un archivo CSV, etiquetándolos con una categoría de movimiento.
+
+    Se espera que el dispositivo envíe 7 valores numéricos en una sola línea,
+    separados por comas. Por ejemplo: "ax,ay,az,gx,gy,gz,temp".
 
     Args:
-        puerto (str): El puerto serial al que está conectado el dispositivo (e.g., '/dev/ttyUSB0' en Linux, 'COM3' en Windows).
+        puerto (str): El puerto serial al que está conectado el dispositivo (ej. 'COM3' en Windows).
         baudrate (int): La velocidad de comunicación del puerto serial.
-        timeout (int): El tiempo de espera para leer del puerto serial en segundos.
-        num_datos (int): El número de conjuntos de datos a capturar.
+        timeout (float): El tiempo de espera en segundos para leer del puerto serial.
+        num_datos (int): El número de conjuntos de datos a capturar por categoría.
     """
     try:
-        # Inicializar la conexión serial
-        ser = serial.Serial(puerto, baudrate, timeout=timeout)
-        time.sleep(2)  # Esperar a que la conexión serial se establezca
-        print(f"Conectado al puerto {puerto}. Comenzando a recibir datos...")
-
-    except serial.SerialException as e:
-        print(f"Error al abrir el puerto serial: {e}")
+        categoria_input = input("Introduce la categoría del movimiento (0-4): ")
+        categoria = int(categoria_input)
+        if categoria not in range(5):
+            print("Error: La categoría debe ser un número entero entre 0 y 4.")
+            return
+    except ValueError:
+        print("Error: Entrada no válida. Por favor, introduce un número entero.")
         return
 
-    # Abrir el archivo para escribir los datos en formato CSV
-    with open("data\datos_sensor.csv", "w", newline='') as file:
-        writer = csv.writer(file)
+    # Crear carpeta 'data' si no existe
+    carpeta_data = os.path.join(os.path.dirname(__file__), '..', 'data')
+    os.makedirs(carpeta_data, exist_ok=True)
 
-        # Escribir el encabezado del archivo CSV
-        writer.writerow(["A_X_ms2", "A_Y_ms2", "A_Z_ms2", "G_X_rads", "G_Y_rads", "G_Z_rads"])
-        
-        # Descartar las primeras líneas de inicialización o vacías
-        print("Esperando la primera línea de datos válida...")
-        while True:
-            try:
-                linea = ser.readline().decode('utf-8').strip()
-                if linea.startswith("A (m/s2):"):
-                    print("Primera línea de datos recibida. Comenzando la captura.")
-                    break
-            except Exception as e:
-                # Omitir errores en las líneas iniciales que no son datos
-                pass
+    nombre_archivo = f"datos_mpu6050_class_{categoria}.csv"
+    ruta_archivo = os.path.join(carpeta_data, nombre_archivo)
+    file_exists = os.path.isfile(ruta_archivo)
 
-        try:
-            # Leer y guardar el número de conjuntos de datos especificado
-            datos_guardados = 0
-            while datos_guardados < num_datos:
-                # Leer una línea del puerto serial
-                linea_a = ser.readline().decode('utf-8').strip()
+    try:
+        with serial.Serial(puerto, baudrate, timeout=timeout) as ser:
+            time.sleep(2)
+            print(f"Conectado al puerto {puerto}. Presiona el botón de reset en tu ESP32 si no recibes datos.")
+            ser.reset_input_buffer()
 
-                # Si la línea es de aceleración, leemos la siguiente para giroscopio
-                if linea_a.startswith("A (m/s2):"):
-                    linea_g = ser.readline().decode('utf-8').strip()
+            with open(ruta_archivo, "a", newline='') as file:
+                writer = csv.writer(file)
 
-                    if linea_g.startswith("G (rad/s):"):
-                        # Extraer los valores numéricos
-                        valores_a = linea_a.replace("A (m/s2): ", "").split(', ')
-                        valores_g = linea_g.replace("G (rad/s): ", "").split(', ')
+                if not file_exists:
+                    writer.writerow(["accel_x", "accel_y", "accel_z", "gyro_x", "gyro_y", "gyro_z", "temp_c", "category"])
 
-                        # Asegurarse de que ambas listas tienen 3 valores
-                        if len(valores_a) == 3 and len(valores_g) == 3:
-                            # Convertir los valores a números (flotantes) y unirlos
-                            datos = [float(val) for val in valores_a + valores_g]
-                            
-                            # Escribir los datos en el archivo CSV
-                            writer.writerow(datos)
-                            print(f"Datos guardados: {datos}")
-                            datos_guardados += 1
-                        else:
-                            print(f"Líneas de datos con formato incorrecto. Ignorando este ciclo.")
-                    else:
-                        print(f"Línea de giroscopio inesperada después de acelerómetro: '{linea_g}'")
-                else:
-                    print(f"Línea inesperada descartada: '{linea_a}'")
+                print(f"\nRecolectando {num_datos} muestras para  categoría {categoria}. Mantén el movimiento...")
+                
+                datos_recolectados = 0
+                while datos_recolectados < num_datos:
+                    if ser.in_waiting > 0:
+                        try:
+                            linea_datos = ser.readline().decode('utf-8').strip()
 
+                            if not linea_datos:
+                                continue
 
-        except Exception as e:
-            print(f"Error al leer del puerto serial o al procesar datos: {e}")
+                            parts = linea_datos.split(',')
+                            if len(parts) == 7:
+                                datos = [float(p) for p in parts]
+                                datos.append(categoria)
+                                
+                                writer.writerow(datos)
+                                print(f"Muestra {datos_recolectados + 1}/{num_datos}: {datos}")
+                                datos_recolectados += 1
+                            else:
+                                print(f"Línea ignorada (formato incorrecto, {len(parts)} valores): {linea_datos}")
 
-        finally:
-            ser.close()
-            print("Conexión serial cerrada.")
-            print("Datos guardados en 'data/datos_sensor.csv'.")
+                        except (ValueError, UnicodeDecodeError) as e:
+                            print(f"Error procesando línea. Ignorando. Detalle: {e}")
+                        except Exception as e:
+                            print(f"Ocurrió un error inesperado: {e}")
+                            break
 
-# Ejecutar la función cuando el script se ejecute directamente
+    except serial.SerialException as e:
+        print(f"Error crítico: No se pudo abrir o leer el puerto serial '{puerto}'. Verifica la conexión. Detalle: {e}")
+        return
+    
+    print(f"\nRecolección completada. {datos_recolectados} muestras guardadas en '{ruta_archivo}'.")
+
 if __name__ == "__main__":
-    guardar_datos_serial(puerto='COM5', num_datos=200)
+    puerto_esp32 = 'COM5' 
+    muestras_a_tomar = 1000
+    
+    guardar_datos_serial(puerto=puerto_esp32, num_datos=muestras_a_tomar)
